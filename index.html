@@ -93,16 +93,10 @@
   }
   .upload-card:hover { border-color: var(--accent); background: var(--surface2); transform: translateY(-2px); }
   .upload-card.has-file { border-style: solid; border-color: var(--green); background: rgba(78,203,148,0.04); }
-
   .upload-card input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
 
-  .upload-icon {
-    width: 50px; height: 50px; margin: 0 auto 14px;
-    border-radius: 14px; display: flex; align-items: center; justify-content: center;
-    font-size: 24px; background: rgba(91,127,255,0.12); transition: background 0.2s;
-  }
+  .upload-icon { width: 50px; height: 50px; margin: 0 auto 14px; border-radius: 14px; display: flex; align-items: center; justify-content: center; font-size: 24px; background: rgba(91,127,255,0.12); transition: background 0.2s; }
   .upload-card.has-file .upload-icon { background: rgba(78,203,148,0.15); }
-
   .upload-label { font-size: 10px; font-weight: 500; color: var(--muted); margin-bottom: 5px; letter-spacing: 1.5px; text-transform: uppercase; }
   .upload-supervisor { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
   .upload-status { font-size: 12px; font-family: 'DM Mono', monospace; color: var(--muted); transition: color 0.2s; word-break: break-all; line-height: 1.5; }
@@ -118,12 +112,7 @@
   .dot-txt { background: rgba(255,190,91,0.2); color: var(--amber); }
   .dot-skip { background: rgba(255,91,114,0.15); color: var(--red); }
 
-  .btn {
-    width: 100%; padding: 15px; border-radius: var(--radius); border: none;
-    font-family: 'Noto Sans TC', sans-serif; font-size: 15px; font-weight: 600;
-    cursor: pointer; transition: all 0.2s; display: flex; align-items: center;
-    justify-content: center; gap: 8px; letter-spacing: 0.5px;
-  }
+  .btn { width: 100%; padding: 15px; border-radius: var(--radius); border: none; font-family: 'Noto Sans TC', sans-serif; font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; letter-spacing: 0.5px; }
   .btn-primary { background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; box-shadow: 0 4px 20px rgba(91,127,255,0.3); }
   .btn-primary:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(91,127,255,0.4); }
   .btn-primary:disabled { opacity: 0.38; cursor: not-allowed; box-shadow: none; transform: none; }
@@ -134,11 +123,7 @@
   .result-panel.visible { display: block; animation: slideIn 0.3s ease; }
   @keyframes slideIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: none; } }
 
-  .result-header {
-    background: linear-gradient(135deg, rgba(78,203,148,0.08), rgba(91,127,255,0.06));
-    padding: 18px 24px; border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; gap: 14px;
-  }
+  .result-header { background: linear-gradient(135deg, rgba(78,203,148,0.08), rgba(91,127,255,0.06)); padding: 18px 24px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 14px; }
   .result-header-text { font-weight: 600; font-size: 15px; }
   .result-header-sub { font-size: 12px; color: var(--muted); margin-top: 3px; }
   .result-body { padding: 22px 24px; }
@@ -189,7 +174,7 @@
 <header>
   <div class="badge">KPI 計算工具</div>
   <h1>部門績效評量整合系統</h1>
-  <p class="subtitle">上傳兩位組長的評量 Excel，系統自動計算平均 KPI 並產出最終結果 Excel 檔案</p>
+  <p class="subtitle">上傳兩位組長的評量 Excel，系統自動計算整合並保留原始格式、樣式與公式</p>
 </header>
 
 <div class="main">
@@ -248,17 +233,14 @@
     </div>
     <div class="result-body">
       <div class="sheet-list" id="sheetList"></div>
-
       <div class="divider">整合結果預覽</div>
       <div class="tab-bar" id="tabBar"></div>
       <div class="preview-wrap">
         <table class="preview-table" id="previewTable"></table>
       </div>
-
       <div class="divider">計算日誌</div>
       <div class="log-area" id="logArea"></div>
-
-      <button class="btn btn-download" id="downloadBtn">⬇ 下載最終 KPI 結果 Excel</button>
+      <button class="btn btn-download" id="downloadBtn">⬇ 下載最終 KPI 結果 Excel（保留原始格式）</button>
     </div>
   </div>
 </div>
@@ -268,11 +250,14 @@
 <script>
 const $ = id => document.getElementById(id);
 
+// Store raw ArrayBuffers so we can re-read with full options
+let buf1 = null, buf2 = null;
 let wb1 = null, wb2 = null;
-let mergedResults = {};
+let mergedResults = {};   // sheetName -> { memberCols, totalRowIdx, notesRowIdx }
 let outputWb = null;
 let outputFilename = '';
 
+// ── UI helpers ────────────────────────────────────────
 function showToast(msg) {
   const t = $('toast');
   t.textContent = msg;
@@ -289,15 +274,25 @@ function log(msg, type = 'info') {
   la.scrollTop = la.scrollHeight;
 }
 
-function readFileAsWb(file) {
+// ── File reading ──────────────────────────────────────
+function readFileAsBuffer(file) {
   return new Promise((res, rej) => {
     const reader = new FileReader();
-    reader.onload = e => {
-      try { res(XLSX.read(new Uint8Array(e.target.result), { type: 'array', raw: true })); }
-      catch(err) { rej(err); }
-    };
+    reader.onload = e => res(e.target.result);  // ArrayBuffer
     reader.onerror = rej;
     reader.readAsArrayBuffer(file);
+  });
+}
+
+function bufToWb(buf) {
+  // cellStyles: true  → preserve fill / font / border / numFmt
+  // cellFormula: true → preserve formulas (f property)
+  // sheetStubs: true  → preserve empty cells so merges render correctly
+  return XLSX.read(new Uint8Array(buf), {
+    type: 'array',
+    cellStyles: true,
+    cellFormula: true,
+    sheetStubs: true,
   });
 }
 
@@ -305,8 +300,10 @@ async function handleFile(inputEl, cardEl, statusEl, slot) {
   const file = inputEl.files[0];
   if (!file) return;
   try {
-    const wb = await readFileAsWb(file);
-    if (slot === 1) wb1 = wb; else wb2 = wb;
+    const buf = await readFileAsBuffer(file);
+    const wb  = bufToWb(buf);
+    if (slot === 1) { buf1 = buf; wb1 = wb; }
+    else            { buf2 = buf; wb2 = wb; }
     cardEl.classList.add('has-file');
     statusEl.textContent = '✓ ' + file.name;
     updateBtn();
@@ -324,13 +321,30 @@ function updateBtn() {
     : (wb1 || wb2) ? '請再上傳另一個評量檔案' : '請先上傳兩個評量檔案';
 }
 
-// ── Excel helpers ──────────────────────────────────
-function getSheetRows(wb, name) {
-  const ws = wb.Sheets[name];
-  if (!ws) return null;
-  const ref = ws['!ref'];
-  if (!ref) return [];
-  const range = XLSX.utils.decode_range(ref);
+// ── Worksheet helpers ─────────────────────────────────
+
+// Deep-clone a worksheet object, preserving styles, merges, col/row dims, etc.
+function cloneWs(ws) {
+  const out = {};
+  for (const k of Object.keys(ws)) {
+    if (k === '!ref') {
+      out[k] = ws[k];
+    } else if (k.startsWith('!')) {
+      // Arrays / objects: deep clone via JSON (safe for xlsx metadata)
+      try { out[k] = JSON.parse(JSON.stringify(ws[k])); }
+      catch(_) { out[k] = ws[k]; }
+    } else {
+      // Cell object: shallow clone keeps style ref, which is fine
+      out[k] = Object.assign({}, ws[k]);
+    }
+  }
+  return out;
+}
+
+// Read a worksheet into a plain 2D array (values only, for analysis)
+function wsToAOA(ws) {
+  if (!ws || !ws['!ref']) return [];
+  const range = XLSX.utils.decode_range(ws['!ref']);
   const rows = [];
   for (let r = range.s.r; r <= range.e.r; r++) {
     const row = [];
@@ -343,7 +357,32 @@ function getSheetRows(wb, name) {
   return rows;
 }
 
-// Row type detectors (arrays, 0-indexed)
+// Get cell value from a worksheet at (rowIdx, colIdx) — 0-based
+function getCellVal(ws, ri, ci) {
+  const cell = ws[XLSX.utils.encode_cell({ r: ri, c: ci })];
+  return cell ? cell.v : null;
+}
+
+// Set cell value in a worksheet, preserving existing style / formula slot
+function setCellVal(ws, ri, ci, val) {
+  const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
+  const existing = ws[addr];
+  if (existing) {
+    existing.v = val;
+    existing.t = typeof val === 'number' ? 'n' : 's';
+    // Remove cached formula result vs formula: keep formula text but update v
+    // Actually: keep .f so Excel recalculates on open; just set .v as hint
+    if (val === null || val === undefined) {
+      existing.v = null;
+      existing.t = 'z';
+    }
+  } else {
+    // Cell didn't exist — create minimal cell
+    ws[addr] = { v: val, t: typeof val === 'number' ? 'n' : 's' };
+  }
+}
+
+// Row-type detectors on AOA rows
 const isScore14 = r => { const d = r[3]; return typeof d === 'number' && d > 0; };
 const isScore56 = r => { const c = r[2]; return typeof c === 'string' && (c.includes('+X%') || c.includes('-X%')); };
 const isNotesRow = r => { const c = r[2]; return typeof c === 'string' && c.includes('加扣分事蹟'); };
@@ -351,23 +390,16 @@ const isTotalRow = r => { const c = r[2]; return typeof c === 'string' && c.incl
 
 function getMemberCols(rows) {
   const hdr = rows[1] || [];
-  const cols = [];
-  for (let i = 4; i < hdr.length; i++) {
-    if (hdr[i] && typeof hdr[i] === 'string' && hdr[i].trim())
-      cols.push({ idx: i, name: hdr[i].trim() });
-  }
-  return cols;
+  return hdr.reduce((acc, v, i) => {
+    if (i >= 4 && v && typeof v === 'string' && v.trim())
+      acc.push({ idx: i, name: v.trim() });
+    return acc;
+  }, []);
 }
 
-function supervisorScored(rows, colIdx) {
-  for (const row of rows) {
-    if (!row) continue;
-    if (isScore14(row) || isScore56(row)) {
-      const v = row[colIdx];
-      if (typeof v === 'number' && v !== 0) return true;
-    }
-  }
-  return false;
+function supervisorScored(rows, ci) {
+  return rows.some(r => r && (isScore14(r) || isScore56(r)) &&
+                         typeof r[ci] === 'number' && r[ci] !== 0);
 }
 
 function combineText(a, b) {
@@ -379,15 +411,21 @@ function combineText(a, b) {
 
 function r4(n) { return Math.round(n * 10000) / 10000; }
 
-function mergeSheetRows(rows1, rows2, sName) {
-  const memberCols = getMemberCols(rows1);
-  if (!memberCols.length) {
-    log(`  ⚠ ${sName}: 找不到成員欄位`, 'warn');
-    return { result: rows1, memberCols, stats: { avg: 0, solo1: 0, solo2: 0 } };
-  }
+// ── Core merge logic ──────────────────────────────────
+// Takes two workbook worksheets (ws1 = base/template, ws2 = second supervisor).
+// Returns a *cloned* ws1 with merged values written in-place.
+function mergeWorksheets(ws1, ws2, sName) {
+  const wsOut = cloneWs(ws1);
+  const rows1 = wsToAOA(ws1);
+  const rows2 = ws2 ? wsToAOA(ws2) : null;
 
-  const result = rows1.map(r => r ? [...r] : r);
+  const memberCols = getMemberCols(rows1);
   const stats = { avg: 0, solo1: 0, solo2: 0 };
+
+  if (!memberCols.length) {
+    log(`  ⚠ ${sName}: 找不到成員欄位，略過`, 'warn');
+    return { wsOut, memberCols, stats, rows1 };
+  }
 
   for (const { idx, name } of memberCols) {
     const s1 = supervisorScored(rows1, idx);
@@ -395,42 +433,59 @@ function mergeSheetRows(rows1, rows2, sName) {
 
     if (!s1 && !s2) { log(`  ⬜ ${name}: 兩位組長均未評分，略過`, 'warn'); continue; }
 
-    if (s1 && s2)       { stats.avg++;   log(`  ⚡ ${name}: 兩位均評分 → 1–4 平均 / 5–6 累計`, 'ok'); }
-    else if (s1)        { stats.solo1++; log(`  📌 ${name}: 僅組長A有評分 → 直接採用`, 'info'); }
-    else                { stats.solo2++; log(`  📌 ${name}: 僅組長B有評分 → 直接採用`, 'info'); }
+    if      (s1 && s2) { stats.avg++;   log(`  ⚡ ${name}: 兩位均評分 → 1–4 平均 / 5–6 累計`, 'ok'); }
+    else if (s1)       { stats.solo1++; log(`  📌 ${name}: 僅組長A有評分 → 直接採用`, 'info'); }
+    else               { stats.solo2++; log(`  📌 ${name}: 僅組長B有評分 → 直接採用`, 'info'); }
 
-    let total = 0;
+    let runningTotal = 0;
+    let hasTotalRow = false;
+
     for (let ri = 0; ri < rows1.length; ri++) {
       const row1 = rows1[ri];
       if (!row1) continue;
-      const row2 = rows2 ? (rows2[ri] || null) : null;
+      const row2v = (rows2 && rows2[ri]) ? rows2[ri] : null;
 
       if (isScore14(row1)) {
         const v1 = typeof row1[idx] === 'number' ? row1[idx] : 0;
-        const v2 = row2 && typeof row2[idx] === 'number' ? row2[idx] : 0;
+        const v2 = row2v && typeof row2v[idx] === 'number' ? row2v[idx] : 0;
         let val;
-        if (s1 && s2) val = r4((v1 + v2) / 2);
-        else if (s1) val = v1;
-        else val = v2;
-        result[ri][idx] = val;
-        total += val;
+        if (s1 && s2)  val = r4((v1 + v2) / 2);
+        else if (s1)   val = v1;
+        else           val = v2;
+        setCellVal(wsOut, ri, idx, val);
+        runningTotal += val;
+
       } else if (isScore56(row1)) {
         const v1 = typeof row1[idx] === 'number' ? row1[idx] : 0;
-        const v2 = row2 && typeof row2[idx] === 'number' ? row2[idx] : 0;
+        const v2 = row2v && typeof row2v[idx] === 'number' ? row2v[idx] : 0;
         const sum = r4(v1 + v2);
-        result[ri][idx] = sum;
-        total += sum;
+        setCellVal(wsOut, ri, idx, sum);
+        runningTotal += sum;
+
       } else if (isNotesRow(row1)) {
-        result[ri][idx] = combineText(row1[idx], row2 ? row2[idx] : null);
+        const merged = combineText(row1[idx], row2v ? row2v[idx] : null);
+        setCellVal(wsOut, ri, idx, merged);
+
       } else if (isTotalRow(row1)) {
-        result[ri][idx] = r4(total);
+        hasTotalRow = true;
+        // Update the cached value of the SUM formula so it shows correct number on open
+        // Keep .f (formula) so user can still edit/recalculate manually
+        const addr = XLSX.utils.encode_cell({ r: ri, c: idx });
+        if (wsOut[addr]) {
+          wsOut[addr].v = r4(runningTotal);
+          wsOut[addr].t = 'n';
+          // Don't delete .f — preserve the formula for manual re-editing
+        } else {
+          wsOut[addr] = { v: r4(runningTotal), t: 'n' };
+        }
       }
     }
   }
-  return { result, memberCols, stats };
+
+  return { wsOut, memberCols, stats, rows1 };
 }
 
-// ── Main ────────────────────────────────────────────
+// ── Main process ──────────────────────────────────────
 $('processBtn').addEventListener('click', async () => {
   if (!wb1 || !wb2) return;
 
@@ -445,7 +500,6 @@ $('processBtn').addEventListener('click', async () => {
   $('processBtn').disabled = true;
   $('btnSpinner').innerHTML = '<div class="spinner"></div>';
   $('btnText').textContent = '計算中...';
-
   await new Promise(r => setTimeout(r, 50));
 
   try {
@@ -455,27 +509,39 @@ $('processBtn').addEventListener('click', async () => {
     log(`[組長A] 工作表: ${sheets1.join(', ')}`, 'info');
     log(`[組長B] 工作表: ${sheets2.join(', ')}`, 'info');
 
+    // Start output workbook as a fresh copy of wb1 (preserves workbook-level props)
     outputWb = XLSX.utils.book_new();
+    // Copy workbook properties if available
+    if (wb1.Props)     outputWb.Props = wb1.Props;
+    if (wb1.Custprops) outputWb.Custprops = wb1.Custprops;
 
     for (const sName of sheets1) {
       log(`\n📄 工作表：【${sName}】`, 'info');
-      const rows1 = getSheetRows(wb1, sName);
-      const rows2 = getSheetRows(wb2, sName);
 
-      let resultRows, memberCols, stats;
+      const ws1 = wb1.Sheets[sName];
+      const ws2 = (sheets2.includes(sName)) ? wb2.Sheets[sName] : null;
 
-      if (rows2) {
+      let wsOut, memberCols, stats, rows1;
+
+      if (ws2) {
         log(`  ✔ 兩個檔案均有此工作表 → 進行整合`, 'ok');
-        const m = mergeSheetRows(rows1, rows2, sName);
-        resultRows = m.result; memberCols = m.memberCols; stats = m.stats;
+        const result = mergeWorksheets(ws1, ws2, sName);
+        wsOut = result.wsOut;
+        memberCols = result.memberCols;
+        stats = result.stats;
+        rows1 = result.rows1;
       } else {
         log(`  ℹ 組長B無此工作表 → 直接採用組長A資料`, 'info');
-        resultRows = rows1; memberCols = getMemberCols(rows1); stats = null;
+        wsOut = cloneWs(ws1);
+        rows1 = wsToAOA(ws1);
+        memberCols = getMemberCols(rows1);
+        stats = null;
       }
 
-      mergedResults[sName] = { resultRows, memberCols };
+      XLSX.utils.book_append_sheet(outputWb, wsOut, sName);
 
-      XLSX.utils.book_append_sheet(outputWb, XLSX.utils.aoa_to_sheet(resultRows), sName);
+      // Store for preview
+      mergedResults[sName] = { wsOut, memberCols, rows1 };
 
       // Summary card
       const card = document.createElement('div');
@@ -485,14 +551,14 @@ $('processBtn').addEventListener('click', async () => {
         <div class="sheet-stats">
           <span class="stat-pill pill-members">👥 ${memberCols.length} 位成員</span>
           ${stats ? [
-            stats.avg > 0 ? `<span class="stat-pill pill-avg">⚡ 平均 ${stats.avg} 人</span>` : '',
+            stats.avg   > 0 ? `<span class="stat-pill pill-avg">⚡ 平均 ${stats.avg} 人</span>` : '',
             (stats.solo1+stats.solo2) > 0 ? `<span class="stat-pill pill-solo">📌 單獨採用 ${stats.solo1+stats.solo2} 人</span>` : ''
           ].join('') : '<span class="stat-pill pill-solo">📌 僅組長A</span>'}
         </div>`;
       $('sheetList').appendChild(card);
     }
 
-    // Tabs
+    // Build tabs + preview
     sheets1.forEach((sName, i) => {
       const btn = document.createElement('button');
       btn.className = 'tab-btn' + (i === 0 ? ' active' : '');
@@ -504,15 +570,14 @@ $('processBtn').addEventListener('click', async () => {
       });
       $('tabBar').appendChild(btn);
     });
-
     renderPreview(sheets1[0]);
 
     const now = new Date();
     const ds = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
     outputFilename = `KPI整合結果_${ds}.xlsx`;
-    $('resultSub').textContent = `共整合 ${sheets1.length} 個工作表 · ${ds}`;
+    $('resultSub').textContent = `共整合 ${sheets1.length} 個工作表 · 保留原始格式與公式 · ${ds}`;
 
-    log(`\n✅ 所有工作表整合完成！`, 'ok');
+    log(`\n✅ 所有工作表整合完成，原始格式、樣式與公式均已保留！`, 'ok');
     $('resultPanel').classList.add('visible');
 
   } catch(e) {
@@ -527,21 +592,21 @@ $('processBtn').addEventListener('click', async () => {
   $('btnText').textContent = '重新計算';
 });
 
+// ── Preview table ──────────────────────────────────────
 function renderPreview(sName) {
   const data = mergedResults[sName];
   if (!data) return;
-  const { resultRows, memberCols } = data;
+  const { wsOut, memberCols, rows1 } = data;
 
-  const totalRow = resultRows.find(r => r && isTotalRow(r));
-  const notesRow = resultRows.find(r => r && isNotesRow(r));
+  const totalRowIdx  = rows1.findIndex(r => r && isTotalRow(r));
+  const notesRowIdx  = rows1.findIndex(r => r && isNotesRow(r));
 
   const tbl = $('previewTable');
   tbl.innerHTML = '';
 
-  // Header
   const thead = tbl.createTHead();
-  const hrow = thead.insertRow();
-  ['成員姓名', '1–4項 KPI 總分', '加扣分事蹟摘要'].forEach(txt => {
+  const hrow  = thead.insertRow();
+  ['成員姓名', '1–6項 KPI 總計', '加扣分事蹟摘要'].forEach(txt => {
     const th = document.createElement('th');
     th.textContent = txt;
     hrow.appendChild(th);
@@ -556,7 +621,7 @@ function renderPreview(sName) {
     tdName.textContent = name;
 
     const tdScore = tr.insertCell();
-    const tv = totalRow ? totalRow[idx] : null;
+    const tv = (totalRowIdx >= 0) ? getCellVal(wsOut, totalRowIdx, idx) : null;
     if (typeof tv === 'number' && tv > 0) {
       tdScore.textContent = (tv * 100).toFixed(2) + '%';
       tdScore.className = 'td-score';
@@ -566,20 +631,29 @@ function renderPreview(sName) {
     }
 
     const tdNote = tr.insertCell();
-    const nv = notesRow ? notesRow[idx] : null;
+    const nv = (notesRowIdx >= 0) ? getCellVal(wsOut, notesRowIdx, idx) : null;
     tdNote.className = 'td-note';
     tdNote.textContent = nv ? String(nv).replace(/\n-----------\n/g, '  ｜  ') : '—';
     tdNote.title = nv ? String(nv) : '';
   }
 }
 
+function getCellVal(ws, ri, ci) {
+  const cell = ws[XLSX.utils.encode_cell({ r: ri, c: ci })];
+  return cell ? cell.v : null;
+}
+
+// ── Download ──────────────────────────────────────────
 $('downloadBtn').addEventListener('click', () => {
   if (!outputWb) return;
-  const buf = XLSX.write(outputWb, { bookType: 'xlsx', type: 'array' });
+  const buf = XLSX.write(outputWb, {
+    bookType: 'xlsx',
+    type: 'array',
+    cellStyles: true,   // write styles back out
+  });
   const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
   const url = URL.createObjectURL(blob);
-  const a = Object.assign(document.createElement('a'), { href: url, download: outputFilename });
-  a.click();
+  Object.assign(document.createElement('a'), { href: url, download: outputFilename }).click();
   URL.revokeObjectURL(url);
 });
 </script>
